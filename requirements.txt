@@ -1,0 +1,7 @@
+# 阶段 1 原型依赖（生产环境阶段 2 会换 faiss-cpu -> pgvector）
+faiss-cpu
+rank_bm25
+jieba
+openai
+numpy
+python-dotenv
