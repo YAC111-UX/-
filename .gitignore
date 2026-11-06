@@ -1,3 +1,27 @@
+# ===== Python =====
 __pycache__/
-*.pyc
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# ===== 运行数据（本地库 / 索引 / 快照，一律不入库） =====
+data/app.db
+data/app.db-journal
+data/faiss/
+data/snapshots/
+data/uploads/
+
+# ===== 环境变量（含密钥，禁止提交） =====
 .env
+
+# ===== IDE / 系统 =====
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# ===== 评测与临时产物 =====
+evaluation/reports/
+*.log
+*.tmp

@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>知行职业学院 · 排课选课助手</title>
+<style>
+  /* ===== 全局布局：弹性列布局，窄屏适配 ===== */
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: "Microsoft YaHei", sans-serif;
+    background: #f4f6f9;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+  /* ===== 顶栏 ===== */
+  header {
+    background: #1f4e8c; color: #fff;
+    padding: 12px 16px;
+    display: flex; align-items: center; justify-content: space-between;
+    flex-shrink: 0;
+  }
+  header h1 { font-size: 17px; font-weight: 600; }
+  header button {
+    background: rgba(255,255,255,.15); color: #fff;
+    border: 1px solid rgba(255,255,255,.4); border-radius: 6px;
+    padding: 5px 12px; cursor: pointer; font-size: 13px;
+  }
+  header button:hover { background: rgba(255,255,255,.25); }
+  /* ===== 消息区 ===== */
+  #chat-box { flex: 1; overflow-y: auto; padding: 16px; }
+  .msg { display: flex; margin-bottom: 14px; }
+  .msg.user { justify-content: flex-end; }      /* 用户消息靠右 */
+  .bubble {
+    max-width: 78%; padding: 10px 14px;
+    border-radius: 10px; line-height: 1.65;
+    font-size: 14px; white-space: pre-wrap; word-break: break-word;
+  }
+  .msg.user .bubble { background: #1f4e8c; color: #fff; border-bottom-right-radius: 2px; }
+  .msg.ai   .bubble { background: #fff; color: #333; border-bottom-left-radius: 2px;
+                      box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+  .msg.err  .bubble { background: #fdecec; color: #c0392b; border: 1px solid #f5b7b1; }
+  /* 引用来源区块（AI 回答气泡底部） */
+  .citations { margin-top: 8px; padding-top: 8px; border-top: 1px dashed #d5dbe3;
+               font-size: 12px; color: #7a8494; }
+  .citations .cite-title { font-weight: 600; color: #5a6472; margin-bottom: 4px; }
+  .citations li { margin-left: 16px; margin-top: 2px; }
+  /* ===== 转报备按钮（辅导员登录后出现在 AI 回答下） ===== */
+  .report-btn {
+    margin-top: 8px; background: #e8f0fe; color: #1f4e8c;
+    border: 1px solid #c9d7ea; border-radius: 6px;
+    padding: 4px 12px; font-size: 12px; cursor: pointer;
+  }
+  .report-btn:hover { background: #d7e5fb; }
+  /* ===== 状态提示条（检索知识库时显示） ===== */
+  #status-bar {
+    display: none; align-items: center; gap: 8px;
+    padding: 6px 16px; font-size: 13px; color: #1f4e8c; flex-shrink: 0;
+  }
+  #status-bar .spinner {
+    width: 14px; height: 14px; border: 2px solid #c9d7ea; border-top-color: #1f4e8c;
+    border-radius: 50%; animation: spin .8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  /* ===== 输入区 ===== */
+  footer { display: flex; gap: 8px; padding: 12px 16px; background: #fff;
+           border-top: 1px solid #e3e7ee; flex-shrink: 0; }
+  #question {
+    flex: 1; padding: 10px 12px; border: 1px solid #d5dbe3; border-radius: 8px;
+    font-size: 14px; outline: none; resize: none; height: 44px; line-height: 22px;
+  }
+  #question:focus { border-color: #1f4e8c; }
+  #send-btn {
+    background: #1f4e8c; color: #fff; border: none; border-radius: 8px;
+    padding: 0 22px; font-size: 14px; cursor: pointer;
+  }
+  #send-btn:disabled { background: #9db4d4; cursor: not-allowed; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>知行职业学院 · 排课选课助手</h1>
+  <div style="display:flex; gap:8px; align-items:center;">
+    <span id="user-badge" style="font-size:12px; display:none;"></span>
+    <button id="login-btn" onclick="userLogin()">登录</button>
+    <button id="new-chat-btn">新对话</button>
+  </div>
+</header>
+
+<div id="chat-box"></div>
+
+<div id="status-bar"><span class="spinner"></span><span id="status-text"></span></div>
+
+<footer>
+  <textarea id="question" placeholder="请输入你的问题，例如：我这门课有没有先修限制？" maxlength="500"></textarea>
+  <button id="send-btn">发送</button>
+</footer>
+
+<script>
+/* ================================================================
+ * 排课选课助手 · 聊天前端（原生 JS，无框架）
+ * 核心逻辑：fetch POST /api/chat → 手动解析 SSE 事件流（POST 请求
+ * 无法用 EventSource，需用 ReadableStream 逐块解析）
+ * ================================================================ */
+
+var chatBox   = document.getElementById('chat-box');
+var inputEl   = document.getElementById('question');
+var sendBtn   = document.getElementById('send-btn');
+var statusBar = document.getElementById('status-bar');
+var statusText = document.getElementById('status-text');
+
+/* session_id 存 localStorage：刷新页面不丢会话，上下文服务端保持连贯 */
+function getSessionId() { return localStorage.getItem('zx_session_id') || ''; }
+function setSessionId(id) { localStorage.setItem('zx_session_id', id); }
+
+/* ---------- 用户登录（阶段 8）：辅导员登录后提问审计显示真实角色，并解锁「转报备」 ---------- */
+/* 聊天页与管理后台/工作台令牌分存：聊天页用 zx_user_token，避免互相覆盖 */
+function getUserToken() { return localStorage.getItem('zx_user_token') || ''; }
+function getUserRole() { return localStorage.getItem('zx_user_role') || ''; }
+function parseUserJwt() {
+  try {
+    var part = getUserToken().split('.')[1];
+    return JSON.parse(decodeURIComponent(escape(atob(part.replace(/-/g, '+').replace(/_/g, '/')))));
+  } catch (e) { return null; }
+}
+function refreshUserBadge() {
+  var badge = document.getElementById('user-badge');
+  var btn = document.getElementById('login-btn');
+  var payload = parseUserJwt();
+  if (payload) {
+    var roleLabel = { counselor: '辅导员', student: '学生', program_leader: '专业负责人',
+                      scheduler: '排课专员', quality: '质量专员', director: '教务主任' };
+    badge.textContent = (roleLabel[payload.role] || payload.role) + ' · ' + payload.username;
+    badge.style.display = 'inline';
+    btn.textContent = '退出';
+  } else {
+    badge.style.display = 'none';
+    btn.textContent = '登录';
+  }
+}
+function userLogin() {
+  if (getUserToken()) {           // 已登录 → 退出
+    ['zx_user_token', 'zx_user_role', 'zx_user_name'].forEach(function (k) {
+      localStorage.removeItem(k);
+    });
+    refreshUserBadge();
+    return;
+  }
+  var username = prompt('请输入用户名（辅导员：counselor）：');
+  if (!username) return;
+  var password = prompt('请输入密码：');
+  if (password === null) return;
+  fetch('/api/auth/login', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username: username, password: password })
+  }).then(function (r) { return r.json(); }).then(function (j) {
+    if (j.code !== 0) { alert('登录失败：' + j.message); return; }
+    localStorage.setItem('zx_user_token', j.data.token);
+    var payload = parseUserJwt();
+    localStorage.setItem('zx_user_role', payload ? payload.role : '');
+    localStorage.setItem('zx_user_name', payload ? payload.username : '');
+    refreshUserBadge();
+  });
+}
+/* 转报备：服务端取该会话最后一条提问原文，前端只传补充说明 */
+function reportToCounselor() {
+  var detail = prompt('转报备给排课专员。可补充说明（提问原文自动带出）：', '') ;
+  if (detail === null) return;
+  fetch('/api/co/reports', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + getUserToken() },
+    body: JSON.stringify({ kind: 'transfer', session_id: getSessionId(), detail: detail })
+  }).then(function (r) { return r.json(); }).then(function (j) {
+    if (j.code === 0) alert(j.data.message + '\n业务编号：' + j.data.business_no);
+    else alert('[' + j.code + '] ' + j.message);
+  });
+}
+/* 当前登录角色为辅导员 → 本轮 AI 回答结束后挂「转报备」按钮 */
+function maybeAddReportBtn(bubble) {
+  if (getUserRole() !== 'counselor' || !getSessionId()) return;
+  var btn = document.createElement('button');
+  btn.className = 'report-btn';
+  btn.textContent = '转报备';
+  btn.onclick = reportToCounselor;
+  bubble.appendChild(btn);
+}
+
+/* 追加一条消息气泡，返回气泡 DOM 便于后续追加流式文本 */
+function addBubble(type, text) {
+  var wrap = document.createElement('div');
+  wrap.className = 'msg ' + type;              // user / ai / err
+  var bubble = document.createElement('div');
+  bubble.className = 'bubble';
+  if (text) bubble.textContent = text;
+  wrap.appendChild(bubble);
+  chatBox.appendChild(wrap);
+  chatBox.scrollTop = chatBox.scrollHeight;    // 自动滚动到底部
+  return bubble;
+}
+
+/* 显示 / 隐藏检索状态条 */
+function showStatus(text) { statusText.textContent = text; statusBar.style.display = 'flex'; }
+function hideStatus() { statusBar.style.display = 'none'; }
+
+/* 锁定 / 解锁输入（流式期间禁止重复发送） */
+function setBusy(busy) { sendBtn.disabled = busy; inputEl.disabled = busy; }
+
+/* 手动解析 SSE：按空行分隔事件块，块内 event: 与 data: 行 */
+function parseSseBlock(block) {
+  var ev = { event: 'message', data: '' };
+  block.split('\n').forEach(function (line) {
+    if (line.indexOf('event:') === 0) ev.event = line.slice(6).trim();
+    else if (line.indexOf('data:') === 0) ev.data += line.slice(5).trim();
+  });
+  return ev;
+}
+
+/* 发送问题：主流程 */
+function ask(question) {
+  addBubble('user', question);
+  setBusy(true);
+  hideStatus();
+
+  var aiBubble = null;   // 收到首条 delta 时才创建 AI 气泡
+
+  var headers = { 'Content-Type': 'application/json' };
+  var token = getUserToken();                 // 登录态可选：带头则审计记录真实角色
+  if (token) headers['Authorization'] = 'Bearer ' + token;
+
+  fetch('/api/chat', {
+    method: 'POST',
+    headers: headers,
+    body: JSON.stringify({ session_id: getSessionId(), question: question })
+  }).then(function (resp) {
+    /* 开流前的业务错误（1001/1002/1003）：HTTP 200 + JSON detail */
+    if (!resp.ok || (resp.headers.get('content-type') || '').indexOf('json') > -1) {
+      return resp.json().then(function (j) {
+        var d = j.detail || j;
+        throw new Error(d.message || '请求失败');
+      });
+    }
+    /* 正常 SSE：reader 逐块读取 */
+    var reader = resp.body.getReader();
+    var decoder = new TextDecoder('utf-8');
+    var buffer = '';
+
+    function pump() {
+      return reader.read().then(function (r) {
+        if (r.done) { finish(); return; }
+        buffer += decoder.decode(r.value, { stream: true });
+        /* SSE 以空行分隔事件；最后一块可能不完整，留在 buffer */
+        var parts = buffer.split('\n\n');
+        buffer = parts.pop();
+        parts.forEach(function (block) {
+          if (block.trim()) handleEvent(parseSseBlock(block));
+        });
+        return pump();
+      });
+    }
+    return pump();
+  }).catch(function (e) {
+    /* 网络层错误 / 业务错误：红色气泡展示中文提示 */
+    hideStatus();
+    addBubble('err', e.message || '网络异常，请稍后重试');
+    finish();
+  });
+
+  function finish() { hideStatus(); setBusy(false); inputEl.focus(); }
+}
+
+/* 事件分发：session / status / tool_call / tool_result / delta / citations / done / error */
+function handleEvent(ev) {
+  var data;
+  try { data = JSON.parse(ev.data); } catch (e) { return; }
+
+  switch (ev.event) {
+    case 'session':                     // 会话 ID（首次或服务端新建）
+      setSessionId(data.session_id);
+      break;
+    case 'status':                      // "正在检索教务制度与排课规则…"
+      showStatus(data.text);
+      break;
+    case 'tool_call':                   // Agent 正在调用工具（第 6 阶段新增）
+      showStatus('[第' + data.round + '轮] ' + data.text);
+      break;
+    case 'tool_result':                 // 工具返回摘要 → 显示后短暂停留再隐藏
+      showStatus(data.tool + '：' + data.summary);
+      break;
+    case 'delta':                       // 流式增量文本 → 打字机效果
+      if (!aiBubbleCreated) { aiBubble = addBubble('ai', ''); aiBubbleCreated = true; }
+      hideStatus();
+      aiBubble.textContent += data.text;
+      chatBox.scrollTop = chatBox.scrollHeight;
+      break;
+    case 'citations':                   // 引用来源：文件名 + 片段节选
+      if (aiBubble) aiBubble.appendChild(buildCitations(data.items));
+      break;
+    case 'error':                       // 业务错误：红色气泡
+      hideStatus();
+      addBubble('err', '[' + data.code + '] ' + data.message);
+      break;
+    case 'done':
+      if (aiBubble) maybeAddReportBtn(aiBubble);   // 辅导员登录态：AI 答完挂「转报备」
+      break;                                        // 收尾统一走 finish()
+  }
+}
+var aiBubbleCreated = false;
+
+/* 构建引用来源 DOM */
+function buildCitations(items) {
+  var box = document.createElement('div');
+  box.className = 'citations';
+  var title = document.createElement('div');
+  title.className = 'cite-title';
+  title.textContent = '引用来源';
+  box.appendChild(title);
+  var ul = document.createElement('ul');
+  items.forEach(function (it) {
+    var li = document.createElement('li');
+    li.textContent = '《' + it.filename + '》' + it.excerpt + '…';
+    ul.appendChild(li);
+  });
+  box.appendChild(ul);
+  return box;
+}
+
+/* 发送按钮 / 回车发送 */
+sendBtn.addEventListener('click', function () {
+  var q = inputEl.value.trim();
+  if (!q) return;
+  inputEl.value = '';
+  aiBubbleCreated = false;
+  ask(q);
+});
+inputEl.addEventListener('keydown', function (e) {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendBtn.click(); }
+});
+
+/* 新对话：清空界面气泡，向服务端要新 session_id */
+document.getElementById('new-chat-btn').addEventListener('click', function () {
+  chatBox.innerHTML = '';
+  fetch('/api/session/new').then(function (r) { return r.json(); }).then(function (j) {
+    if (j.code === 0) setSessionId(j.data.session_id);
+  });
+  inputEl.focus();
+});
+
+/* 页面加载：恢复登录角标（阶段 8） */
+refreshUserBadge();
+</script>
+</body>
+</html>
