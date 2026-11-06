@@ -1,0 +1,25 @@
+# ============ 阶段 1 裸 RAG 原型依赖（Python 3.11+） ============
+# 向量索引库（CPU 版即可，无需 GPU）
+faiss-cpu>=1.9.0
+# 数值计算（FAISS 依赖）
+numpy>=1.26.0
+# 中文分词（BM25 关键词检索用）
+jieba>=0.42.1
+# HTTP 请求（调用 LLM / Embedding API）
+requests>=2.31.0
+# 读取 .env 环境变量配置文件
+python-dotenv>=1.0.0
+
+# ============ 阶段 4 Web 服务新增 ============
+# Web 框架（异步）
+fastapi>=0.115.0
+# ASGI 服务器
+uvicorn>=0.30.0
+
+# ============ 阶段 5 管理后台新增 ============
+# JWT 签发与校验（HS256）
+pyjwt>=2.8.0
+# PDF 纯文本提取（知识库上传 pdf 制度文件）
+pypdf>=4.0.0
+# multipart 表单解析（FastAPI 文件上传必需）
+python-multipart>=0.0.9

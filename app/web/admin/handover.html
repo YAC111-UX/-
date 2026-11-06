@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>交接单 · 管理后台</title>
+<style>
+  /* ===== SaaS 风格：左侧导航 + 右侧内容区（与 drafts.html 同款式） ===== */
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: "Microsoft YaHei", sans-serif; background: #f4f6f9; height: 100vh;
+         display: flex; overflow: hidden; }
+  aside { width: 210px; background: #1f4e8c; color: #fff; flex-shrink: 0;
+          display: flex; flex-direction: column; }
+  aside .logo { padding: 18px 16px; font-size: 15px; font-weight: 600;
+                border-bottom: 1px solid rgba(255,255,255,.15); }
+  aside nav { flex: 1; padding: 10px 0; }
+  aside nav a { display: block; padding: 11px 20px; color: rgba(255,255,255,.85);
+                text-decoration: none; font-size: 14px; }
+  aside nav a:hover { background: rgba(255,255,255,.1); }
+  aside nav a.active { background: rgba(255,255,255,.18); border-left: 3px solid #fff; }
+  aside .user-box { padding: 14px 16px; font-size: 13px;
+                    border-top: 1px solid rgba(255,255,255,.15); }
+  aside .user-box button {
+    margin-top: 8px; background: rgba(255,255,255,.15); color: #fff;
+    border: 1px solid rgba(255,255,255,.4); border-radius: 6px;
+    padding: 4px 12px; cursor: pointer; font-size: 12px;
+  }
+  main { flex: 1; overflow-y: auto; padding: 24px 28px; }
+  main h2 { font-size: 17px; color: #333; margin-bottom: 4px; }
+  main .desc { font-size: 13px; color: #8a93a3; margin-bottom: 18px; }
+  .filters { display: flex; gap: 10px; align-items: center; margin-bottom: 16px; flex-wrap: wrap; }
+  .filters select, .filters input { padding: 6px 10px; border: 1px solid #d5dbe3;
+                                    border-radius: 6px; font-size: 13px; }
+  .filters input { width: 200px; outline: none; }
+  .filters label { font-size: 13px; color: #5a6472; display: flex; align-items: center; gap: 4px; }
+  .btn { background: #1f4e8c; color: #fff; border: none; border-radius: 6px;
+         padding: 7px 18px; font-size: 13px; cursor: pointer; }
+  .btn.ghost { background: #fff; color: #1f4e8c; border: 1px solid #c9d7ea; }
+  .btn.mini { padding: 4px 12px; font-size: 12px; }
+  table { width: 100%; background: #fff; border-radius: 8px;
+          border-collapse: collapse; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
+  th, td { padding: 10px 12px; text-align: left; font-size: 13px;
+           border-bottom: 1px solid #eef1f5; vertical-align: top; }
+  th { background: #fafbfc; color: #5a6472; font-weight: 600; white-space: nowrap; }
+  .tag { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 12px; }
+  .tag.pending    { background: #fff7e6; color: #b26b00; }   /* 待处理：橙 */
+  .tag.accepted   { background: #e8f0fe; color: #1f4e8c; }   /* 处理中：蓝 */
+  .tag.completed  { background: #e8f5e9; color: #2e7d32; }   /* 已完成：绿 */
+  .tag.escalated  { background: #fdecec; color: #c0392b; }   /* 已升级：红 */
+  .esc-alert { margin-top: 6px; font-size: 12px; color: #c0392b; }
+  .item { font-size: 12px; color: #5a6472; line-height: 1.7; }
+  .ops { display: flex; flex-direction: column; gap: 6px; }
+  .src { font-size: 12px; color: #a5adb9; }
+  #toast { display: none; position: fixed; top: 20px; right: 24px; z-index: 9;
+           background: #333; color: #fff; padding: 10px 18px; border-radius: 8px; font-size: 13px; }
+  #empty { display: none; text-align: center; color: #a5adb9; padding: 40px 0; font-size: 13px; }
+  /* 超时升级提醒横幅（本次查询触发过 sweep 时显示） */
+  #esc-banner { display: none; padding: 8px 12px; background: #fdecec; color: #c0392b;
+                border: 1px solid #f5b7b1; border-radius: 6px; font-size: 13px; margin-bottom: 12px; }
+</style>
+</head>
+<body>
+
+<aside>
+  <div class="logo">教务协作后台</div>
+  <nav id="nav"></nav>
+  <div class="user-box">
+    <div id="user-name">-</div>
+    <button onclick="logout()">退出登录</button>
+  </div>
+</aside>
+
+<main>
+  <h2>交接单据</h2>
+  <div class="desc">人工兜底任务单据。被派人确认接手后才能完成；到期未处理自动升级教务主任（红色标记）。</div>
+  <div id="esc-banner"></div>
+  <div class="filters">
+    <select id="f-status" onchange="loadList()">
+      <option value="">全部状态</option>
+      <option value="pending">待处理</option>
+      <option value="accepted">处理中</option>
+      <option value="completed">已完成</option>
+      <option value="escalated">已升级</option>
+    </select>
+    <input id="f-kw" placeholder="编号 / 标题 / 未解决事项" onkeydown="if(event.key==='Enter')loadList()">
+    <label><input type="checkbox" id="f-mine" onchange="loadList()"> 仅我的</label>
+    <button class="btn ghost" onclick="loadList()">刷新</button>
+  </div>
+  <table>
+    <thead>
+      <tr><th style="width:150px;">业务编号 / 版本</th><th>标题 / 未解决事项</th>
+          <th style="width:150px;">状态 / 接手</th><th style="width:110px;">操作</th></tr>
+    </thead>
+    <tbody id="rows"></tbody>
+  </table>
+  <div id="empty">暂无交接单</div>
+</main>
+
+<div id="toast"></div>
+
+<script>
+/* ================================================================
+ * 交接单页（原生 JS）
+ * GET  /api/admin/handover?status=&keyword=&mine=   列表（查询前服务端先跑超时升级）
+ * POST /api/admin/handover/{id}/accept   认领（仅被派人本人，服务层校验）
+ * POST /api/admin/handover/{id}/complete 完成（仅被派人本人，处理结果必填）
+ * ================================================================ */
+
+/* ---------- 公共：JWT 与鉴权请求 ---------- */
+function getToken() { return localStorage.getItem('zx_admin_token') || ''; }
+function parseJwt() {
+  try {
+    var part = getToken().split('.')[1];
+    return JSON.parse(decodeURIComponent(escape(atob(part.replace(/-/g, '+').replace(/_/g, '/')))));
+  } catch (e) { return null; }
+}
+function authFetch(url, options) {
+  options = options || {};
+  options.headers = options.headers || {};
+  options.headers['Authorization'] = 'Bearer ' + getToken();
+  if (options.body && !options.headers['Content-Type']) {
+    options.headers['Content-Type'] = 'application/json';
+  }
+  return fetch(url, options).then(function (r) { return r.json(); })
+    .then(function (j) {
+      if (j.code === '1005') { location.href = '/admin/login'; throw new Error(j.message); }
+      return j;
+    });
+}
+var NAV_ITEMS = [
+  { href: '/admin/kb',       label: '知识库管理', roles: ['scheduler', 'director'] },
+  { href: '/admin/prompt',   label: '提示词模板', roles: ['scheduler', 'quality', 'director'] },
+  { href: '/admin/audit',    label: '对话审计',   roles: ['quality', 'director'] },
+  { href: '/admin/drafts',   label: '草稿确认',   roles: ['scheduler', 'director'] },
+  { href: '/admin/handover', label: '交接单',     roles: ['scheduler', 'director'] }
+];
+var ROLE_LABEL = { scheduler: '排课专员', quality: '教学质量专员', director: '教务主任' };
+function initLayout(activeHref) {
+  var payload = parseJwt();
+  if (!payload) { location.href = '/admin/login'; return null; }
+  document.getElementById('user-name').textContent =
+    (ROLE_LABEL[payload.role] || payload.role) + ' · ' + payload.username;
+  var html = '';
+  NAV_ITEMS.forEach(function (it) {
+    if (it.roles.indexOf(payload.role) > -1) {
+      html += '<a href="' + it.href + '" class="' +
+              (it.href === activeHref ? 'active' : '') + '">' + it.label + '</a>';
+    }
+  });
+  document.getElementById('nav').innerHTML = html;
+  return payload;
+}
+function logout() { localStorage.removeItem('zx_admin_token'); location.href = '/admin/login'; }
+function toast(msg) {
+  var t = document.getElementById('toast');
+  t.textContent = msg; t.style.display = 'block';
+  setTimeout(function () { t.style.display = 'none'; }, 2600);
+}
+
+/* ---------- 本页业务 ---------- */
+var currentUser = initLayout('/admin/handover');
+/* JWT payload 的 sub 字段就是用户 ID（签发时 str(user_id)），parseInt 转回数字便于比对 assignee_id */
+var myUserId = currentUser ? parseInt(currentUser.sub, 10) : 0;
+
+function esc(s) {
+  return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function statusTag(t) {
+  var map = { pending: '待处理', accepted: '处理中', completed: '已完成', escalated: '已升级' };
+  return '<span class="tag ' + t + '">' + (map[t] || t) + '</span>';
+}
+
+function loadList() {
+  var st = document.getElementById('f-status').value;
+  var kw = encodeURIComponent(document.getElementById('f-kw').value.trim());
+  var mine = document.getElementById('f-mine').checked ? 1 : 0;
+  var qs = [];
+  if (st) qs.push('status=' + st);
+  if (kw) qs.push('keyword=' + kw);
+  if (mine) qs.push('mine=true');
+  authFetch('/api/admin/handover' + (qs.length ? '?' + qs.join('&') : '')).then(function (j) {
+    if (j.code !== 0) { toast('[' + j.code + '] ' + j.message); return; }
+    /* 本次查询触发了超时升级 → 红色横幅提示 */
+    var banner = document.getElementById('esc-banner');
+    if (j.data.escalated_now > 0) {
+      banner.textContent = '本次刷新有 ' + j.data.escalated_now +
+        ' 张单据因超时自动升级至教务主任，已改派重新待处理。';
+      banner.style.display = 'block';
+    } else {
+      banner.style.display = 'none';
+    }
+    var tbody = document.getElementById('rows');
+    tbody.innerHTML = '';
+    document.getElementById('empty').style.display = j.data.items.length ? 'none' : 'block';
+    j.data.items.forEach(function (t) {
+      var tr = document.createElement('tr');
+      /* 状态区：标签 + 接手人 + 关键时间；升级单据额外给红色提示 */
+      var sign = statusTag(t.status) +
+        '<div class="src">接手人：' + esc(t.assignee_name || '待改派') + '</div>';
+      /* 阶段 8：专业负责人验收标记（最新一条） */
+      if (t.verify_verdict === 'pass') {
+        sign += '<div><span class="tag completed">已验收·通过</span></div>';
+      } else if (t.verify_verdict === 'issue') {
+        sign += '<div><span class="tag escalated">已验收·有问题</span></div>';
+      }
+      if (t.accepted_at) sign += '<div class="src">确认接手：' + esc(t.accepted_at) + '</div>';
+      if (t.escalate_at && t.status !== 'completed') {
+        sign += '<div class="src">升级时限：' + esc(t.escalate_at) + '</div>';
+      }
+      if (t.status === 'escalated') {
+        sign += '<div class="esc-alert">超时已升级教务主任</div>';
+      }
+      if (t.status === 'completed') {
+        sign += '<div class="item">处理结果：' + esc(t.resolution || '') + '</div>';
+      }
+      /* 操作按钮：认领（待处理/已升级且是我的单）+ 完成（处理中且是我的单） */
+      var ops = '';
+      var isMine = t.assignee_id === myUserId;
+      if (isMine && (t.status === 'pending' || t.status === 'escalated')) {
+        ops += '<button class="btn mini" onclick="acceptTask(' + t.id + ')">认领</button>';
+      }
+      if (isMine && t.status === 'accepted') {
+        ops += '<button class="btn mini" onclick="completeTask(' + t.id + ')">完成</button>';
+      }
+      if (ops) ops = '<div class="ops">' + ops + '</div>';
+      tr.innerHTML = '<td><b>' + esc(t.business_no) + '</b>' +
+        '<div class="src">v' + esc(t.version) + ' · ' + esc(t.created_at || '') + '</div></td>' +
+        '<td><b>' + esc(t.title) + '</b><div class="item">' + esc(t.unresolved_items || '') + '</div></td>' +
+        '<td>' + sign + '</td><td>' + ops + '</td>';
+      tbody.appendChild(tr);
+    });
+  });
+}
+
+function acceptTask(id) {
+  if (!confirm('确认接手该单据吗？接手后须填写处理结果才能完成。')) return;
+  authFetch('/api/admin/handover/' + id + '/accept', { method: 'POST' })
+    .then(function (j) {
+      if (j.code === 0) { toast(j.message); loadList(); }
+      else toast('[' + j.code + '] ' + j.message);   // 1005 非本人 / 1012 状态不允许
+    });
+}
+
+function completeTask(id) {
+  var resolution = prompt('请填写处理结果（必填，审计留痕）：');
+  if (resolution === null) return;                    // 用户取消
+  authFetch('/api/admin/handover/' + id + '/complete', {
+    method: 'POST', body: JSON.stringify({ resolution: resolution })
+  }).then(function (j) {
+    if (j.code === 0) { toast(j.message); loadList(); }
+    else toast('[' + j.code + '] ' + j.message);
+  });
+}
+
+loadList();
+</script>
+</body>
+</html>

@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>提示词模板 · 管理后台</title>
+<style>
+  /* ===== SaaS 风格：左侧导航 + 右侧内容区（与 kb.html 同款式） ===== */
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: "Microsoft YaHei", sans-serif; background: #f4f6f9; height: 100vh;
+         display: flex; overflow: hidden; }
+  aside { width: 210px; background: #1f4e8c; color: #fff; flex-shrink: 0;
+          display: flex; flex-direction: column; }
+  aside .logo { padding: 18px 16px; font-size: 15px; font-weight: 600;
+                border-bottom: 1px solid rgba(255,255,255,.15); }
+  aside nav { flex: 1; padding: 10px 0; }
+  aside nav a { display: block; padding: 11px 20px; color: rgba(255,255,255,.85);
+                text-decoration: none; font-size: 14px; }
+  aside nav a:hover { background: rgba(255,255,255,.1); }
+  aside nav a.active { background: rgba(255,255,255,.18); border-left: 3px solid #fff; }
+  aside .user-box { padding: 14px 16px; font-size: 13px;
+                    border-top: 1px solid rgba(255,255,255,.15); }
+  aside .user-box button {
+    margin-top: 8px; background: rgba(255,255,255,.15); color: #fff;
+    border: 1px solid rgba(255,255,255,.4); border-radius: 6px;
+    padding: 4px 12px; cursor: pointer; font-size: 12px;
+  }
+  main { flex: 1; overflow-y: auto; padding: 24px 28px; }
+  main h2 { font-size: 17px; color: #333; margin-bottom: 4px; }
+  main .desc { font-size: 13px; color: #8a93a3; margin-bottom: 18px; }
+  .editor-card { background: #fff; border-radius: 8px; padding: 18px 20px;
+                 box-shadow: 0 1px 3px rgba(0,0,0,.06); }
+  #template {
+    width: 100%; height: 420px; padding: 14px; border: 1px solid #d5dbe3;
+    border-radius: 8px; font-size: 13px; line-height: 1.8; outline: none;
+    resize: vertical; font-family: Consolas, "Microsoft YaHei", monospace;
+  }
+  #template:focus { border-color: #1f4e8c; }
+  #template[readonly] { background: #fafbfc; color: #5a6472; }
+  .meta { font-size: 12px; color: #a5adb9; margin: 10px 0; }
+  .meta b { color: #c0392b; }
+  .toolbar { display: flex; gap: 10px; align-items: center; }
+  .btn { background: #1f4e8c; color: #fff; border: none; border-radius: 6px;
+         padding: 8px 20px; font-size: 13px; cursor: pointer; }
+  .btn:disabled { background: #9db4d4; cursor: not-allowed; }
+  .btn.ghost { background: #fff; color: #1f4e8c; border: 1px solid #c9d7ea; }
+  #toast { display: none; position: fixed; top: 20px; right: 24px; z-index: 9;
+           background: #333; color: #fff; padding: 10px 18px; border-radius: 8px; font-size: 13px; }
+  #readonly-tip { display: none; padding: 8px 12px; background: #fff7e6; color: #b26b00;
+                  border: 1px solid #ffe1ad; border-radius: 6px; font-size: 13px; margin-bottom: 12px; }
+</style>
+</head>
+<body>
+
+<aside>
+  <div class="logo">教务协作后台</div>
+  <nav id="nav"></nav>
+  <div class="user-box">
+    <div id="user-name">-</div>
+    <button onclick="logout()">退出登录</button>
+  </div>
+</aside>
+
+<main>
+  <h2>提示词模板管理</h2>
+  <div class="desc">AI 助手的系统提示词模板。保存后立即生效（每次提问实时读取），无需重启服务。</div>
+  <div id="readonly-tip">当前角色为只读权限，仅可查看模板；如需修改请联系教务主任。</div>
+  <div class="editor-card">
+    <textarea id="template" spellcheck="false"></textarea>
+    <div class="meta">注意：模板中的占位符 <b>{context}</b> 为检索条文注入位，保存时必须保留，否则校验失败（错误码 1009）。</div>
+    <div class="toolbar">
+      <button class="btn" id="save-btn">保存模板</button>
+      <button class="btn ghost" onclick="loadTemplate()">撤销修改</button>
+      <span id="updated-at" style="font-size:12px;color:#a5adb9;"></span>
+    </div>
+  </div>
+</main>
+
+<div id="toast"></div>
+
+<script>
+/* ================================================================
+ * 提示词模板页（原生 JS）
+ * GET  /api/admin/prompt → 读模板（scheduler/quality/director）
+ * PUT  /api/admin/prompt → 保存（仅 director；缺 {context} 报 1009）
+ * ================================================================ */
+
+/* ---------- 公共：JWT 与鉴权请求（每个后台页面都带这一段） ---------- */
+function getToken() { return localStorage.getItem('zx_admin_token') || ''; }
+function parseJwt() {
+  try {
+    var part = getToken().split('.')[1];
+    return JSON.parse(decodeURIComponent(escape(atob(part.replace(/-/g, '+').replace(/_/g, '/')))));
+  } catch (e) { return null; }
+}
+function authFetch(url, options) {
+  options = options || {};
+  options.headers = options.headers || {};
+  options.headers['Authorization'] = 'Bearer ' + getToken();
+  if (options.body && !options.headers['Content-Type']) {
+    options.headers['Content-Type'] = 'application/json';
+  }
+  return fetch(url, options).then(function (resp) { return resp.json(); })
+    .then(function (j) {
+      if (j.code === '1005') { location.href = '/admin/login'; throw new Error(j.message); }
+      return j;
+    });
+}
+var NAV_ITEMS = [
+  { href: '/admin/kb',     label: '知识库管理', roles: ['scheduler', 'director'] },
+  { href: '/admin/prompt', label: '提示词模板', roles: ['scheduler', 'quality', 'director'] },
+  { href: '/admin/audit',    label: '对话审计',   roles: ['quality', 'director'] },
+  { href: '/admin/drafts',   label: '草稿确认',   roles: ['scheduler', 'director'] },
+  { href: '/admin/handover', label: '交接单',     roles: ['scheduler', 'director'] }
+];
+var ROLE_LABEL = { scheduler: '排课专员', quality: '教学质量专员', director: '教务主任',
+                   counselor: '辅导员', program_leader: '专业负责人', student: '学生' };
+function initLayout(activeHref) {
+  var payload = parseJwt();
+  if (!payload) { location.href = '/admin/login'; return null; }
+  document.getElementById('user-name').textContent =
+    (ROLE_LABEL[payload.role] || payload.role) + ' · ' + payload.username;
+  var html = '';
+  NAV_ITEMS.forEach(function (it) {
+    if (it.roles.indexOf(payload.role) > -1) {
+      html += '<a href="' + it.href + '" class="' +
+              (it.href === activeHref ? 'active' : '') + '">' + it.label + '</a>';
+    }
+  });
+  document.getElementById('nav').innerHTML = html;
+  return payload;
+}
+function logout() {
+  localStorage.removeItem('zx_admin_token');
+  location.href = '/admin/login';
+}
+function toast(msg) {
+  var t = document.getElementById('toast');
+  t.textContent = msg; t.style.display = 'block';
+  setTimeout(function () { t.style.display = 'none'; }, 2600);
+}
+
+/* ---------- 本页业务 ---------- */
+var tplEl = document.getElementById('template');
+var saveBtn = document.getElementById('save-btn');
+var currentUser = initLayout('/admin/prompt');
+var canEdit = currentUser && currentUser.role === 'director';   // 编辑权仅教务主任
+
+/* 只读角色：textarea 置灰 + 隐藏保存按钮 */
+if (!canEdit) {
+  tplEl.readOnly = true;
+  saveBtn.style.display = 'none';
+  document.getElementById('readonly-tip').style.display = 'block';
+}
+
+function loadTemplate() {
+  authFetch('/api/admin/prompt').then(function (j) {
+    if (j.code !== 0) { toast('[' + j.code + '] ' + j.message); return; }
+    tplEl.value = j.data.template;
+    document.getElementById('updated-at').textContent =
+      '最后更新：' + (j.data.updated_at || '-');
+  });
+}
+
+saveBtn.addEventListener('click', function () {
+  var template = tplEl.value.trim();
+  if (!template) { toast('模板内容不能为空'); return; }
+  if (template.indexOf('{context}') === -1) {
+    toast('保存失败：模板必须保留 {context} 占位符（1009）');
+    return;                                    // 前端先拦一道，服务端仍会校验
+  }
+  saveBtn.disabled = true;
+  authFetch('/api/admin/prompt', {
+    method: 'PUT',
+    body: JSON.stringify({ template: template })
+  }).then(function (j) {
+    saveBtn.disabled = false;
+    if (j.code === 0) { toast('模板已保存，下一次提问立即生效'); loadTemplate(); }
+    else toast('[' + j.code + '] ' + j.message);
+  }).catch(function () { saveBtn.disabled = false; });
+});
+
+loadTemplate();
+</script>
+</body>
+</html>

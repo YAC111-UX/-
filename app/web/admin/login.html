@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>管理后台登录 · 知行职业学院</title>
+<style>
+  /* ===== 登录页：居中卡片布局，与聊天页同色系 ===== */
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: "Microsoft YaHei", sans-serif;
+    background: #f4f6f9;
+    height: 100vh;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .card {
+    background: #fff; border-radius: 12px;
+    box-shadow: 0 4px 20px rgba(31,78,140,.12);
+    padding: 36px 40px; width: 380px;
+  }
+  .card h1 { font-size: 18px; color: #1f4e8c; text-align: center; margin-bottom: 6px; }
+  .card .sub { font-size: 13px; color: #8a93a3; text-align: center; margin-bottom: 24px; }
+  .field { margin-bottom: 16px; }
+  .field label { display: block; font-size: 13px; color: #5a6472; margin-bottom: 6px; }
+  .field input {
+    width: 100%; padding: 10px 12px; border: 1px solid #d5dbe3; border-radius: 8px;
+    font-size: 14px; outline: none;
+  }
+  .field input:focus { border-color: #1f4e8c; }
+  #login-btn {
+    width: 100%; padding: 11px; background: #1f4e8c; color: #fff;
+    border: none; border-radius: 8px; font-size: 14px; cursor: pointer; margin-top: 6px;
+  }
+  #login-btn:disabled { background: #9db4d4; cursor: not-allowed; }
+  #err-msg {
+    display: none; margin-bottom: 14px; padding: 8px 12px;
+    background: #fdecec; color: #c0392b; border: 1px solid #f5b7b1;
+    border-radius: 6px; font-size: 13px;
+  }
+  .tip { margin-top: 18px; font-size: 12px; color: #a5adb9; line-height: 1.7; }
+</style>
+</head>
+<body>
+
+<div class="card">
+  <h1>排课选课助手 · 管理后台</h1>
+  <div class="sub">仅限教务管理角色登录</div>
+  <div id="err-msg"></div>
+  <div class="field">
+    <label>用户名</label>
+    <input id="username" placeholder="如 scheduler / director" autocomplete="username">
+  </div>
+  <div class="field">
+    <label>密码</label>
+    <input id="password" type="password" placeholder="请输入密码" autocomplete="current-password">
+  </div>
+  <button id="login-btn">登 录</button>
+  <div class="tip">初始账号由系统首次启动自动创建（scheduler / quality / director /<br>counselor / program_leader），上线前请务必修改初始密码。</div>
+</div>
+
+<script>
+/* ================================================================
+ * 管理后台登录页（原生 JS）
+ * 流程：POST /api/auth/login → token 存 localStorage → 按角色跳转对应页面
+ * ================================================================ */
+
+var errMsg = document.getElementById('err-msg');
+var loginBtn = document.getElementById('login-btn');
+
+/* 各角色登录后的落地页（无后台页面权限的角色在页面上提示） */
+var HOME_BY_ROLE = {
+  scheduler: '/admin/kb',
+  quality: '/admin/audit',
+  director: '/admin/kb'
+};
+
+function showErr(msg) { errMsg.textContent = msg; errMsg.style.display = 'block'; }
+
+function doLogin() {
+  var username = document.getElementById('username').value.trim();
+  var password = document.getElementById('password').value;
+  if (!username || !password) { showErr('请输入用户名和密码'); return; }
+
+  loginBtn.disabled = true;
+  fetch('/api/auth/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username: username, password: password })
+  }).then(function (r) { return r.json(); }).then(function (j) {
+    if (j.code !== 0) {                       // 1006：用户名或密码错误 / 账号停用
+      showErr(j.message || '登录失败');
+      loginBtn.disabled = false;
+      return;
+    }
+    localStorage.setItem('zx_admin_token', j.data.token);
+    var home = HOME_BY_ROLE[j.data.role];
+    if (home) { location.href = home; }
+    else {
+      showErr('登录成功，但该角色（' + j.data.role + '）暂无管理后台页面权限');
+      loginBtn.disabled = false;
+    }
+  }).catch(function () {
+    showErr('网络异常，请稍后重试');
+    loginBtn.disabled = false;
+  });
+}
+
+loginBtn.addEventListener('click', doLogin);
+document.getElementById('password').addEventListener('keydown', function (e) {
+  if (e.key === 'Enter') doLogin();
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>协作工作台 · 知行职业学院</title>
+<style>
+  /* ===== SaaS 同款框架：左侧导航 + 右侧内容区（与 /admin 页面一致风格） ===== */
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: "Microsoft YaHei", sans-serif; background: #f4f6f9; height: 100vh;
+         display: flex; overflow: hidden; }
+  aside { width: 210px; background: #1f4e8c; color: #fff; flex-shrink: 0;
+          display: flex; flex-direction: column; }
+  aside .logo { padding: 18px 16px; font-size: 15px; font-weight: 600;
+                border-bottom: 1px solid rgba(255,255,255,.15); }
+  aside nav { flex: 1; padding: 10px 0; }
+  aside nav a { display: block; padding: 11px 20px; color: rgba(255,255,255,.85);
+                text-decoration: none; font-size: 14px; }
+  aside nav a:hover { background: rgba(255,255,255,.1); }
+  aside nav a.active { background: rgba(255,255,255,.18); border-left: 3px solid #fff; }
+  aside .user-box { padding: 14px 16px; font-size: 13px;
+                    border-top: 1px solid rgba(255,255,255,.15); }
+  aside .user-box button {
+    margin-top: 8px; background: rgba(255,255,255,.15); color: #fff;
+    border: 1px solid rgba(255,255,255,.4); border-radius: 6px;
+    padding: 4px 12px; cursor: pointer; font-size: 12px;
+  }
+  main { flex: 1; overflow-y: auto; padding: 24px 28px; }
+  main h2 { font-size: 17px; color: #333; margin-bottom: 4px; }
+  main .desc { font-size: 13px; color: #8a93a3; margin-bottom: 18px; }
+  .btn { background: #1f4e8c; color: #fff; border: none; border-radius: 6px;
+         padding: 7px 18px; font-size: 13px; cursor: pointer; }
+  .btn.ghost { background: #fff; color: #1f4e8c; border: 1px solid #c9d7ea; }
+  .btn.mini { padding: 4px 12px; font-size: 12px; }
+  table { width: 100%; background: #fff; border-radius: 8px;
+          border-collapse: collapse; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
+  th, td { padding: 10px 12px; text-align: left; font-size: 13px;
+           border-bottom: 1px solid #eef1f5; vertical-align: top; }
+  th { background: #fafbfc; color: #5a6472; font-weight: 600; white-space: nowrap; }
+  .tag { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 12px; }
+  .tag.pending   { background: #fff7e6; color: #b26b00; }
+  .tag.accepted  { background: #e8f0fe; color: #1f4e8c; }
+  .tag.completed { background: #e8f5e9; color: #2e7d32; }
+  .tag.escalated { background: #fdecec; color: #c0392b; }
+  .tag.v-pass    { background: #e8f5e9; color: #2e7d32; }   /* 验收通过：绿 */
+  .tag.v-issue   { background: #fdecec; color: #c0392b; }   /* 有问题：红 */
+  .item { font-size: 12px; color: #5a6472; line-height: 1.7; }
+  .src { font-size: 12px; color: #a5adb9; }
+  .card { background: #fff; border-radius: 8px; padding: 18px 20px; margin-bottom: 18px;
+          box-shadow: 0 1px 3px rgba(0,0,0,.06); }
+  .card h3 { font-size: 14px; color: #333; margin-bottom: 10px; }
+  .card textarea, .card input, .card select {
+    width: 100%; padding: 8px 10px; border: 1px solid #d5dbe3; border-radius: 6px;
+    font-size: 13px; outline: none; font-family: inherit; margin-bottom: 10px;
+  }
+  .card textarea { height: 64px; resize: vertical; }
+  .row { display: flex; gap: 10px; align-items: center; margin-bottom: 10px; flex-wrap: wrap; }
+  .row label { font-size: 13px; color: #5a6472; }
+  section { display: none; }
+  section.active { display: block; }
+  /* 未登录登录卡片 */
+  #login-card { max-width: 380px; margin: 80px auto; background: #fff; border-radius: 10px;
+                padding: 28px; box-shadow: 0 2px 10px rgba(0,0,0,.08); }
+  #login-card h2 { margin-bottom: 16px; }
+  #login-card input { width: 100%; padding: 9px 10px; border: 1px solid #d5dbe3;
+                      border-radius: 6px; font-size: 14px; outline: none; margin-bottom: 12px; }
+  #login-card .btn { width: 100%; padding: 10px; }
+  #login-err { color: #c0392b; font-size: 13px; margin-bottom: 10px; display: none; }
+  #toast { display: none; position: fixed; top: 20px; right: 24px; z-index: 9;
+           background: #333; color: #fff; padding: 10px 18px; border-radius: 8px; font-size: 13px; }
+  #empty { display: none; text-align: center; color: #a5adb9; padding: 40px 0; font-size: 13px; }
+  #app { display: none; }
+</style>
+</head>
+<body>
+
+<!-- 未登录：登录卡片（与管理后台共用同一 JWT，存 zx_admin_token） -->
+<div id="login-card">
+  <h2>协作工作台登录</h2>
+  <div id="login-err"></div>
+  <input id="login-user" placeholder="用户名（counselor / program_leader）">
+  <input id="login-pass" type="password" placeholder="密码">
+  <button class="btn" onclick="doLogin()">登 录</button>
+</div>
+
+<!-- 已登录：工作台 -->
+<div id="app">
+  <aside>
+    <div class="logo">协作工作台</div>
+    <nav id="nav"></nav>
+    <div class="user-box">
+      <div id="user-name">-</div>
+      <button onclick="logout()">退出登录</button>
+    </div>
+  </aside>
+
+  <main>
+    <!-- ===== 辅导员：报备 ===== -->
+    <section id="sec-reports">
+      <h2>学生转报备 / 现场异常登记</h2>
+      <div class="desc">报备后自动生成交接单派给排课专员，24 小时未处理自动升级教务主任。可在此跟踪状态。</div>
+      <div class="card">
+        <h3>现场异常登记</h3>
+        <input id="inc-title" placeholder="异常标题，如：X102 实训室维护占用但排课表仍标可用">
+        <textarea id="inc-detail" placeholder="详细说明（必填）"></textarea>
+        <button class="btn" onclick="submitIncident()">提交登记</button>
+      </div>
+      <div class="card">
+        <h3>转报备（挂接聊天会话）</h3>
+        <div class="row">
+          <input id="tr-session" style="flex:1;" placeholder="粘贴学生提问所在的会话 ID（session_id，聊天页「新对话」后自动生成）">
+        </div>
+        <textarea id="tr-detail" placeholder="补充说明（可空，提问原文自动取自该会话）"></textarea>
+        <button class="btn" onclick="submitTransfer()">生成报备单</button>
+      </div>
+      <h2 style="margin-top:22px;">我的报备单</h2>
+      <div class="desc">状态流转与接手人实时同步自管理端交接单。</div>
+      <table>
+        <thead><tr><th style="width:150px;">业务编号</th><th>标题 / 说明</th>
+            <th style="width:180px;">状态 / 接手</th></tr></thead>
+        <tbody id="report-rows"></tbody>
+      </table>
+      <div id="report-empty">暂无报备单。可在聊天页登录后点「转报备」，或在上方登记现场异常。</div>
+    </section>
+
+    <!-- ===== 专业负责人：培养方案核校 ===== -->
+    <section id="sec-program">
+      <h2>培养方案核校</h2>
+      <div class="desc" id="program-desc">课程清单与先修映射（只读）。核校只留痕不判定：发现问题请走交接单流转。</div>
+      <div class="card">
+        <h3>提交核校意见</h3>
+        <div class="row">
+          <label><input type="radio" name="pv" value="pass" checked> 核校通过</label>
+          <label><input type="radio" name="pv" value="issue"> 发现问题</label>
+        </div>
+        <textarea id="pv-issues" placeholder="发现问题时必填问题说明"></textarea>
+        <button class="btn" onclick="submitProgramVerify()">提交核校意见</button>
+      </div>
+      <table>
+        <thead><tr><th style="width:130px;">课程</th><th>先修要求</th><th style="width:110px;">教室</th></tr></thead>
+        <tbody id="program-rows"></tbody>
+      </table>
+      <div id="program-empty" style="display:none;">培养方案数据为空</div>
+    </section>
+
+    <!-- ===== 专业负责人：验收 ===== -->
+    <section id="sec-acceptance">
+      <h2>服务结果验收</h2>
+      <div class="desc">对排课专员已完成的交接单进行验收。验收只留痕：通过 / 有问题（有问题请另行报备或转交）。</div>
+      <table>
+        <thead><tr><th style="width:150px;">业务编号</th><th>标题 / 处理结果</th>
+            <th style="width:170px;">验收状态</th><th style="width:90px;">操作</th></tr></thead>
+        <tbody id="acc-rows"></tbody>
+      </table>
+      <div id="acc-empty">暂无待验收单据</div>
+      <h2 style="margin-top:22px;">我的核校 / 验收历史</h2>
+      <table>
+        <thead><tr><th style="width:110px;">类型</th><th>对象</th>
+            <th style="width:110px;">结论</th><th style="width:160px;">时间</th></tr></thead>
+        <tbody id="his-rows"></tbody>
+      </table>
+      <div id="his-empty">暂无历史记录</div>
+    </section>
+  </main>
+</div>
+
+<div id="toast"></div>
+
+<script>
+/* ================================================================
+ * 协作工作台（原生 JS）
+ * 辅导员 counselor   → 报备：POST/GET /api/co/reports
+ * 专业负责人 leader  → 核校：GET /api/co/program, POST /api/co/program/verify
+ *                     验收：GET/POST /api/co/acceptance, GET /api/co/verify/history
+ * 登录态与 /admin 后台共用：POST /api/auth/login，token 存 zx_admin_token
+ * ================================================================ */
+
+function getToken() { return localStorage.getItem('zx_admin_token') || ''; }
+function parseJwt() {
+  try {
+    var part = getToken().split('.')[1];
+    return JSON.parse(decodeURIComponent(escape(atob(part.replace(/-/g, '+').replace(/_/g, '/')))));
+  } catch (e) { return null; }
+}
+function authFetch(url, options) {
+  options = options || {};
+  options.headers = options.headers || {};
+  options.headers['Authorization'] = 'Bearer ' + getToken();
+  if (options.body && !options.headers['Content-Type']) {
+    options.headers['Content-Type'] = 'application/json';
+  }
+  return fetch(url, options).then(function (r) { return r.json(); })
+    .then(function (j) {
+      if (j.code === '1005') { showLogin(); throw new Error(j.message); }
+      return j;
+    });
+}
+function toast(msg) {
+  var t = document.getElementById('toast');
+  t.textContent = msg; t.style.display = 'block';
+  setTimeout(function () { t.style.display = 'none'; }, 2600);
+}
+function esc(s) {
+  return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+/* ---------- 登录 ---------- */
+function showLogin() {
+  document.getElementById('login-card').style.display = 'block';
+  document.getElementById('app').style.display = 'none';
+}
+function showApp(payload) {
+  document.getElementById('login-card').style.display = 'none';
+  document.getElementById('app').style.display = 'flex';
+  var isCounselor = payload.role === 'counselor';
+  var isLeader = payload.role === 'program_leader';
+  document.getElementById('user-name').textContent =
+    (isCounselor ? '辅导员' : '专业课程负责人') + ' · ' + payload.username;
+  /* 按角色显隐功能区 */
+  var first = '';
+  if (isCounselor) { first = 'sec-reports'; }
+  else if (isLeader) { first = 'sec-program'; }
+  if (!first) { showLogin(); return; }
+  var nav = document.getElementById('nav');
+  var html = '';
+  if (isCounselor) {
+    html += '<a href="#" data-sec="sec-reports" class="active">报备与跟踪</a>';
+  }
+  if (isLeader) {
+    html += '<a href="#" data-sec="sec-program">培养方案核校</a>';
+    html += '<a href="#" data-sec="sec-acceptance">服务结果验收</a>';
+  }
+  nav.innerHTML = html;
+  nav.querySelectorAll('a').forEach(function (a) {
+    a.addEventListener('click', function (e) {
+      e.preventDefault();
+      nav.querySelectorAll('a').forEach(function (x) { x.classList.remove('active'); });
+      a.classList.add('active');
+      document.querySelectorAll('main section').forEach(function (s) { s.classList.remove('active'); });
+      document.getElementById(a.dataset.sec).classList.add('active');
+      if (a.dataset.sec === 'sec-program') loadProgram();
+      if (a.dataset.sec === 'sec-acceptance') loadAcceptance();
+    });
+  });
+  document.querySelectorAll('main section').forEach(function (s) { s.classList.remove('active'); });
+  document.getElementById(first).classList.add('active');
+  if (isCounselor) loadMyReports();
+  else { loadProgram(); }
+}
+function doLogin() {
+  var errEl = document.getElementById('login-err');
+  errEl.style.display = 'none';
+  fetch('/api/auth/login', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username: document.getElementById('login-user').value.trim(),
+                           password: document.getElementById('login-pass').value })
+  }).then(function (r) { return r.json(); }).then(function (j) {
+    if (j.code !== 0) {
+      errEl.textContent = j.message; errEl.style.display = 'block'; return;
+    }
+    localStorage.setItem('zx_admin_token', j.data.token);
+    showApp(parseJwt());
+  });
+}
+function logout() {
+  localStorage.removeItem('zx_admin_token');
+  showLogin();
+}
+
+/* ---------- 辅导员：报备 ---------- */
+function submitTransfer() {
+  var sid = document.getElementById('tr-session').value.trim();
+  if (!sid) { toast('请填写会话 ID（聊天页「新对话」后自动生成）'); return; }
+  authFetch('/api/co/reports', {
+    method: 'POST',
+    body: JSON.stringify({ kind: 'transfer', session_id: sid,
+                           detail: document.getElementById('tr-detail').value.trim() })
+  }).then(function (j) {
+    if (j.code !== 0) { toast('[' + j.code + '] ' + j.message); return; }
+    toast(j.data.message + '（编号 ' + j.data.business_no + '）');
+    document.getElementById('tr-session').value = '';
+    document.getElementById('tr-detail').value = '';
+    loadMyReports();
+  });
+}
+function submitIncident() {
+  authFetch('/api/co/reports', {
+    method: 'POST',
+    body: JSON.stringify({ kind: 'incident',
+                           title: document.getElementById('inc-title').value.trim(),
+                           detail: document.getElementById('inc-detail').value.trim() })
+  }).then(function (j) {
+    if (j.code !== 0) { toast('[' + j.code + '] ' + j.message); return; }
+    toast(j.data.message + '（编号 ' + j.data.business_no + '）');
+    document.getElementById('inc-title').value = '';
+    document.getElementById('inc-detail').value = '';
+    loadMyReports();
+  });
+}
+function statusTag(t) {
+  var map = { pending: '待处理', accepted: '处理中', completed: '已完成', escalated: '已升级' };
+  return '<span class="tag ' + t + '">' + (map[t] || t) + '</span>';
+}
+function verifyTag(v) {
+  if (v === 'pass') return ' <span class="tag v-pass">已验收·通过</span>';
+  if (v === 'issue') return ' <span class="tag v-issue">已验收·有问题</span>';
+  return '';
+}
+function loadMyReports() {
+  authFetch('/api/co/reports').then(function (j) {
+    if (j.code !== 0) { toast('[' + j.code + '] ' + j.message); return; }
+    var tbody = document.getElementById('report-rows');
+    tbody.innerHTML = '';
+    document.getElementById('report-empty').style.display = j.data.items.length ? 'none' : 'block';
+    j.data.items.forEach(function (t) {
+      var tr = document.createElement('tr');
+      var sign = statusTag(t.status) + verifyTag(t.verify_verdict) +
+        '<div class="src">接手人：' + esc(t.assignee_name || '待改派') + '</div>';
+      if (t.status === 'completed') {
+        sign += '<div class="item">处理结果：' + esc(t.resolution || '') + '</div>';
+      }
+      tr.innerHTML = '<td><b>' + esc(t.business_no) + '</b>' +
+        '<div class="src">' + esc(t.created_at || '') + '</div></td>' +
+        '<td><b>' + esc(t.title) + '</b><div class="item">' + esc(t.unresolved_items || '') + '</div></td>' +
+        '<td>' + sign + '</td>';
+      tbody.appendChild(tr);
+    });
+  });
+}
+
+/* ---------- 专业负责人：核校 ---------- */
+function loadProgram() {
+  authFetch('/api/co/program').then(function (j) {
+    if (j.code !== 0) { toast('[' + j.code + '] ' + j.message); return; }
+    var d = j.data;
+    document.getElementById('program-desc').textContent =
+      d.semester + ' 学期 · 课程清单与先修映射（数据源：' + d.data_source +
+      (d.snapshot_at ? '，快照 ' + d.snapshot_at : '') + '）。核校只留痕不判定：发现问题请走交接单流转。';
+    var tbody = document.getElementById('program-rows');
+    tbody.innerHTML = '';
+    document.getElementById('program-empty').style.display = d.courses.length ? 'none' : 'block';
+    d.courses.forEach(function (c) {
+      var tr = document.createElement('tr');
+      var pres = c.prerequisites.length
+        ? c.prerequisites.map(function (p) { return esc(p.code + ' ' + p.name); }).join('、')
+        : '（无）';
+      tr.innerHTML = '<td><b>' + esc(c.code) + '</b> ' + esc(c.name) + '</td>' +
+        '<td>' + pres + '</td><td>' + esc(c.room || '-') + '</td>';
+      tbody.appendChild(tr);
+    });
+  });
+}
+function submitProgramVerify() {
+  var verdict = document.querySelector('input[name="pv"]:checked').value;
+  var issues = document.getElementById('pv-issues').value.trim();
+  if (verdict === 'issue' && !issues) { toast('发现问题时必须填写问题说明'); return; }
+  authFetch('/api/co/program/verify', {
+    method: 'POST',
+    body: JSON.stringify({ target_type: 'program', verdict: verdict, issues: issues })
+  }).then(function (j) {
+    if (j.code !== 0) { toast('[' + j.code + '] ' + j.message); return; }
+    toast(j.message);
+    document.getElementById('pv-issues').value = '';
+  });
+}
+
+/* ---------- 专业负责人：验收 ---------- */
+function loadAcceptance() {
+  authFetch('/api/co/acceptance').then(function (j) {
+    if (j.code !== 0) { toast('[' + j.code + '] ' + j.message); return; }
+    var tbody = document.getElementById('acc-rows');
+    tbody.innerHTML = '';
+    document.getElementById('acc-empty').style.display = j.data.items.length ? 'none' : 'block';
+    j.data.items.forEach(function (t) {
+      var tr = document.createElement('tr');
+      var verdict = t.verify_verdict
+        ? verifyTag(t.verify_verdict) + (t.verify_issues ? '<div class="item">' + esc(t.verify_issues) + '</div>' : '')
+        : '<span class="src">未验收</span>';
+      tr.innerHTML = '<td><b>' + esc(t.business_no) + '</b>' +
+        '<div class="src">' + esc(t.created_at || '') + '</div></td>' +
+        '<td><b>' + esc(t.title) + '</b><div class="item">处理结果：' + esc(t.resolution || '') + '</div></td>' +
+        '<td>' + verdict + '</td>' +
+        '<td><button class="btn mini" onclick="acceptTask(' + t.id + ')">验收</button></td>';
+      tbody.appendChild(tr);
+    });
+    loadHistory();
+  });
+}
+function acceptTask(id) {
+  var verdict = confirm('验收「通过」点确定；发现「有问题」请点取消后在弹窗改选。') ? 'pass' : null;
+  var comment = prompt('验收意见（选「有问题」时必填）：', '') || '';
+  if (verdict === null) verdict = 'issue';
+  if (verdict === 'issue' && !comment.trim()) { toast('有问题时必须填写意见'); return; }
+  authFetch('/api/co/acceptance/' + id, {
+    method: 'POST', body: JSON.stringify({ verdict: verdict, comment: comment })
+  }).then(function (j) {
+    if (j.code !== 0) { toast('[' + j.code + '] ' + j.message); return; }
+    toast(j.message);
+    loadAcceptance();
+  });
+}
+function loadHistory() {
+  authFetch('/api/co/verify/history').then(function (j) {
+    if (j.code !== 0) return;
+    var tbody = document.getElementById('his-rows');
+    tbody.innerHTML = '';
+    document.getElementById('his-empty').style.display = j.data.items.length ? 'none' : 'block';
+    j.data.items.forEach(function (v) {
+      var tr = document.createElement('tr');
+      var obj = v.target_type === 'program' ? '培养方案（当前学期）'
+        : (esc(v.handover_biz_no || '') + ' ' + esc(v.handover_title || ''));
+      tr.innerHTML = '<td>' + (v.target_type === 'program' ? '方案核校' : '交接单验收') + '</td>' +
+        '<td>' + obj + '</td>' +
+        '<td>' + verifyTag(v.verdict) + (v.issues ? '<div class="item">' + esc(v.issues) + '</div>' : '') + '</td>' +
+        '<td class="src">' + esc(v.created_at || '') + '</td>';
+      tbody.appendChild(tr);
+    });
+  });
+}
+
+/* ---------- 启动：已持有合法令牌则直接进工作台 ---------- */
+(function () {
+  var payload = parseJwt();
+  if (payload && (payload.role === 'counselor' || payload.role === 'program_leader')) {
+    showApp(payload);
+  } else if (payload) {
+    /* 其他管理角色不使用工作台 */
+    localStorage.removeItem('zx_admin_token');
+    showLogin();
+  } else {
+    showLogin();
+  }
+  document.getElementById('login-pass').addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') doLogin();
+  });
+})();
+</script>
+</body>
+</html>

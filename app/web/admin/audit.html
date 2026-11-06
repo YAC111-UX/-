@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>对话审计 · 管理后台</title>
+<style>
+  /* ===== SaaS 风格：左侧导航 + 右侧内容区（与 kb.html 同款式） ===== */
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: "Microsoft YaHei", sans-serif; background: #f4f6f9; height: 100vh;
+         display: flex; overflow: hidden; }
+  aside { width: 210px; background: #1f4e8c; color: #fff; flex-shrink: 0;
+          display: flex; flex-direction: column; }
+  aside .logo { padding: 18px 16px; font-size: 15px; font-weight: 600;
+                border-bottom: 1px solid rgba(255,255,255,.15); }
+  aside nav { flex: 1; padding: 10px 0; }
+  aside nav a { display: block; padding: 11px 20px; color: rgba(255,255,255,.85);
+                text-decoration: none; font-size: 14px; }
+  aside nav a:hover { background: rgba(255,255,255,.1); }
+  aside nav a.active { background: rgba(255,255,255,.18); border-left: 3px solid #fff; }
+  aside .user-box { padding: 14px 16px; font-size: 13px;
+                    border-top: 1px solid rgba(255,255,255,.15); }
+  aside .user-box button {
+    margin-top: 8px; background: rgba(255,255,255,.15); color: #fff;
+    border: 1px solid rgba(255,255,255,.4); border-radius: 6px;
+    padding: 4px 12px; cursor: pointer; font-size: 12px;
+  }
+  main { flex: 1; overflow-y: auto; padding: 24px 28px; }
+  main h2 { font-size: 17px; color: #333; margin-bottom: 4px; }
+  main .desc { font-size: 13px; color: #8a93a3; margin-bottom: 18px; }
+  /* ---- 筛选条 ---- */
+  .filters { display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
+             background: #fff; border-radius: 8px; padding: 12px 16px; margin-bottom: 16px;
+             box-shadow: 0 1px 3px rgba(0,0,0,.06); }
+  .filters label { font-size: 13px; color: #5a6472; }
+  .filters select, .filters input {
+    padding: 6px 10px; border: 1px solid #d5dbe3; border-radius: 6px;
+    font-size: 13px; outline: none;
+  }
+  .btn { background: #1f4e8c; color: #fff; border: none; border-radius: 6px;
+         padding: 7px 18px; font-size: 13px; cursor: pointer; }
+  .btn:disabled { background: #9db4d4; cursor: not-allowed; }
+  .btn.ghost { background: #fff; color: #1f4e8c; border: 1px solid #c9d7ea; }
+  /* ---- 列表 ---- */
+  table { width: 100%; background: #fff; border-radius: 8px;
+          border-collapse: collapse; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
+  th, td { padding: 10px 12px; text-align: left; font-size: 13px;
+           border-bottom: 1px solid #eef1f5; vertical-align: top; }
+  th { background: #fafbfc; color: #5a6472; font-weight: 600; white-space: nowrap; }
+  td .q { color: #333; }
+  td .a { color: #7a8494; }
+  .cell-limit { max-width: 320px; white-space: normal; word-break: break-word;
+                display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical;
+                overflow: hidden; }
+  /* 高风险问答整行红色标记 */
+  tr.risk td { background: #fdf2f2; }
+  tr.risk td:first-child { border-left: 3px solid #c0392b; }
+  .risk-tag { display: inline-block; background: #c0392b; color: #fff;
+              padding: 1px 8px; border-radius: 10px; font-size: 12px; margin-bottom: 4px; }
+  .risk-reason { font-size: 12px; color: #c0392b; }
+  .pager { display: flex; align-items: center; gap: 12px; margin-top: 14px;
+           font-size: 13px; color: #5a6472; }
+  #toast { display: none; position: fixed; top: 20px; right: 24px; z-index: 9;
+           background: #333; color: #fff; padding: 10px 18px; border-radius: 8px; font-size: 13px; }
+  #empty { display: none; text-align: center; color: #a5adb9; padding: 40px 0; font-size: 13px; }
+</style>
+</head>
+<body>
+
+<aside>
+  <div class="logo">教务协作后台</div>
+  <nav id="nav"></nav>
+  <div class="user-box">
+    <div id="user-name">-</div>
+    <button onclick="logout()">退出登录</button>
+  </div>
+</aside>
+
+<main>
+  <h2>对话审计</h2>
+  <div class="desc">查看全部会话问答记录；命中风险关键词的问答自动红色标记，供教学质量专员复核。</div>
+
+  <div class="filters">
+    <label>提问人角色
+      <select id="f-role"><option value="">全部</option></select>
+    </label>
+    <label>起始 <input type="datetime-local" id="f-start"></label>
+    <label>截止 <input type="datetime-local" id="f-end"></label>
+    <label><input type="checkbox" id="f-risk"> 仅看高风险</label>
+    <button class="btn" id="query-btn">查 询</button>
+    <span id="total-info" style="font-size:12px;color:#a5adb9;"></span>
+  </div>
+
+  <table>
+    <thead>
+      <tr><th style="width:150px;">时间 / 提问人</th><th>提问</th><th>回答</th><th style="width:170px;">风险</th></tr>
+    </thead>
+    <tbody id="audit-rows"></tbody>
+  </table>
+  <div id="empty">暂无符合条件的记录</div>
+
+  <div class="pager">
+    <button class="btn ghost" id="prev-btn">上一页</button>
+    <span id="page-info"></span>
+    <button class="btn ghost" id="next-btn">下一页</button>
+  </div>
+</main>
+
+<div id="toast"></div>
+
+<script>
+/* ================================================================
+ * 对话审计页（原生 JS）
+ * GET /api/admin/audit/messages?role&start_time&end_time&risk_only&page&page_size
+ * 权限：教学质量专员(quality) / 教务主任(director)
+ * ================================================================ */
+
+/* ---------- 公共：JWT 与鉴权请求（每个后台页面都带这一段） ---------- */
+function getToken() { return localStorage.getItem('zx_admin_token') || ''; }
+function parseJwt() {
+  try {
+    var part = getToken().split('.')[1];
+    return JSON.parse(decodeURIComponent(escape(atob(part.replace(/-/g, '+').replace(/_/g, '/')))));
+  } catch (e) { return null; }
+}
+function authFetch(url, options) {
+  options = options || {};
+  options.headers = options.headers || {};
+  options.headers['Authorization'] = 'Bearer ' + getToken();
+  return fetch(url, options).then(function (resp) { return resp.json(); })
+    .then(function (j) {
+      if (j.code === '1005') { location.href = '/admin/login'; throw new Error(j.message); }
+      return j;
+    });
+}
+var NAV_ITEMS = [
+  { href: '/admin/kb',     label: '知识库管理', roles: ['scheduler', 'director'] },
+  { href: '/admin/prompt', label: '提示词模板', roles: ['scheduler', 'quality', 'director'] },
+  { href: '/admin/audit',    label: '对话审计',   roles: ['quality', 'director'] },
+  { href: '/admin/drafts',   label: '草稿确认',   roles: ['scheduler', 'director'] },
+  { href: '/admin/handover', label: '交接单',     roles: ['scheduler', 'director'] }
+];
+var ROLE_LABEL = { scheduler: '排课专员', quality: '教学质量专员', director: '教务主任',
+                   counselor: '辅导员', program_leader: '专业负责人', student: '学生' };
+function initLayout(activeHref) {
+  var payload = parseJwt();
+  if (!payload) { location.href = '/admin/login'; return null; }
+  document.getElementById('user-name').textContent =
+    (ROLE_LABEL[payload.role] || payload.role) + ' · ' + payload.username;
+  var html = '';
+  NAV_ITEMS.forEach(function (it) {
+    if (it.roles.indexOf(payload.role) > -1) {
+      html += '<a href="' + it.href + '" class="' +
+              (it.href === activeHref ? 'active' : '') + '">' + it.label + '</a>';
+    }
+  });
+  document.getElementById('nav').innerHTML = html;
+  return payload;
+}
+function logout() {
+  localStorage.removeItem('zx_admin_token');
+  location.href = '/admin/login';
+}
+function toast(msg) {
+  var t = document.getElementById('toast');
+  t.textContent = msg; t.style.display = 'block';
+  setTimeout(function () { t.style.display = 'none'; }, 2600);
+}
+
+/* ---------- 本页业务：筛选 + 分页列表 ---------- */
+var page = 1, totalPages = 1;
+var PAGE_SIZE = 20;
+
+/* datetime-local 值（YYYY-MM-DDTHH:MM）→ 接口格式（YYYY-MM-DD HH:MM:SS） */
+function normTime(v, endOfDay) {
+  if (!v) return '';
+  var s = v.replace('T', ' ');
+  return s.length === 16 ? (s + (endOfDay ? ':59' : ':00')) : s;
+}
+
+/* 用接口返回的 role_labels 填充角色下拉（含"游客"） */
+function fillRoleSelect(labels) {
+  var sel = document.getElementById('f-role');
+  var current = sel.value;
+  var html = '<option value="">全部</option>';
+  Object.keys(labels).forEach(function (k) {
+    html += '<option value="' + k + '">' + labels[k] + '</option>';
+  });
+  sel.innerHTML = html;
+  sel.value = current;
+}
+
+function loadList() {
+  var role = document.getElementById('f-role').value;
+  var start = normTime(document.getElementById('f-start').value, false);
+  var end = normTime(document.getElementById('f-end').value, true);
+  var riskOnly = document.getElementById('f-risk').checked;
+
+  var qs = ['page=' + page, 'page_size=' + PAGE_SIZE];
+  if (role) qs.push('role=' + encodeURIComponent(role));
+  if (start) qs.push('start_time=' + encodeURIComponent(start));
+  if (end) qs.push('end_time=' + encodeURIComponent(end));
+  if (riskOnly) qs.push('risk_only=true');
+
+  authFetch('/api/admin/audit/messages?' + qs.join('&')).then(function (j) {
+    if (j.code !== 0) { toast('[' + j.code + '] ' + j.message); return; }
+    fillRoleSelect(j.data.role_labels);
+
+    var total = j.data.total;
+    totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+    document.getElementById('total-info').textContent = '共 ' + total + ' 条';
+    document.getElementById('page-info').textContent = '第 ' + page + ' / ' + totalPages + ' 页';
+    document.getElementById('prev-btn').disabled = page <= 1;
+    document.getElementById('next-btn').disabled = page >= totalPages;
+
+    var tbody = document.getElementById('audit-rows');
+    tbody.innerHTML = '';
+    document.getElementById('empty').style.display = j.data.items.length ? 'none' : 'block';
+
+    j.data.items.forEach(function (m) {
+      var tr = document.createElement('tr');
+      if (m.risk_flag) tr.className = 'risk';          // 高风险整行标红
+      var riskCell = m.risk_flag
+        ? '<div class="risk-tag">高风险</div><div class="risk-reason">' +
+          (m.risk_reason || '') + '</div>'
+        : '<span style="color:#a5adb9;">-</span>';
+      tr.innerHTML =
+        '<td>' + (m.created_at || '') + '<br><b>' + (m.asker || '游客') + '</b>' +
+        '（' + (m.asker_role_label || '游客') + '）</td>' +
+        '<td><div class="cell-limit q">' + escapeHtml(m.question) + '</div></td>' +
+        '<td><div class="cell-limit a">' + escapeHtml(m.answer || '（未回答）') + '</div></td>' +
+        '<td>' + riskCell + '</td>';
+      tbody.appendChild(tr);
+    });
+  });
+}
+
+/* 防 XSS：内容全部按纯文本转义后再插入 innerHTML */
+function escapeHtml(s) {
+  return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+document.getElementById('query-btn').addEventListener('click', function () {
+  page = 1; loadList();
+});
+document.getElementById('prev-btn').addEventListener('click', function () {
+  if (page > 1) { page--; loadList(); }
+});
+document.getElementById('next-btn').addEventListener('click', function () {
+  if (page < totalPages) { page++; loadList(); }
+});
+
+/* 页面初始化：鉴权 → 渲染导航 → 拉第一页 */
+initLayout('/admin/audit');
+loadList();
+</script>
+</body>
+</html>

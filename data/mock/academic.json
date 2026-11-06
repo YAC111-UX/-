@@ -1,0 +1,22 @@
+{
+  "semester": "2026春",
+  "comment": "教务系统 Mock 数据（试点期本地用，接口对齐真实教务 API，阶段 9 联调只换实现）",
+  "courses": [
+    { "code": "SW101", "name": "程序设计基础", "prerequisites": [] },
+    { "code": "SW201", "name": "数据结构", "prerequisites": ["SW101"] },
+    { "code": "SW202", "name": "数据库原理", "prerequisites": ["SW101"], "room": "X102" },
+    { "code": "SW301", "name": "软件工程", "prerequisites": ["SW201", "SW202"] },
+    { "code": "X301", "name": "实训：Web应用开发", "prerequisites": ["SW202"], "room": "X103" }
+  ],
+  "course_mapping": {
+    "comment": "新旧课程代码官方映射表（只读），旧代码 → 新代码",
+    "C101": "SW101",
+    "C202": "SW202"
+  },
+  "students": {
+    "comment": "学生伪 ID（脱敏），不存明文学号；选课数据实时透传不落库",
+    "S001": { "name": "学生一", "completed": ["SW101", "SW201"] },
+    "S002": { "name": "学生二", "completed": ["SW101", "C202"] },
+    "S003": { "name": "学生三", "completed": ["SW101"] }
+  }
+}

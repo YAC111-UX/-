@@ -1,0 +1,37 @@
+{
+  "comment": "场地预约系统 Mock 数据（试点期本地用）：课表占用 + 维护占用两路数据源",
+  "rooms": {
+    "X102": {
+      "name": "X102 实训室",
+      "capacity": 40,
+      "schedule": [
+        { "week_day": 1, "section": "3-4节", "course": "SW202 数据库原理" }
+      ],
+      "maintenance": [
+        { "week_day": 3, "section": "3-4节", "reason": "设备检修", "until": "2026-11-20", "schedule_still_available": true }
+      ]
+    },
+    "X103": {
+      "name": "X103 实训室",
+      "capacity": 45,
+      "schedule": [
+        { "week_day": 3, "section": "1-2节", "course": "X301 实训：Web应用开发" }
+      ],
+      "maintenance": []
+    },
+    "J303": {
+      "name": "J303 普通教室",
+      "capacity": 60,
+      "schedule": [],
+      "maintenance": []
+    },
+    "J305": {
+      "name": "J305 普通教室",
+      "capacity": 50,
+      "schedule": [
+        { "week_day": 5, "section": "5-6节", "course": "SW301 软件工程" }
+      ],
+      "maintenance": []
+    }
+  }
+}
